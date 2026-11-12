@@ -181,11 +181,12 @@ i.coin.g { background: #f8d040; } i.coin.s { background: #c8d0d8; }
 .tframe .inner { position: relative; container-type: inline-size; }
 #titlepic { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; image-rendering: pixelated; }
 /* title sits in the empty sky on the left, clear of the glowing knob */
-.tlogo { position: absolute; left: 5%; top: 8%; width: 52%; text-align: left; pointer-events: none; }
-.tlogo small { display: block; font-family: var(--display); font-weight: 700; color: #fff3c8; letter-spacing: .22em; font-size: 1.35cqw; text-transform: uppercase; text-shadow: 2px 2px 0 #000; }
-.tlogo h1 { margin: .2em 0 0; font-family: var(--display); font-weight: 900; font-size: 5.6cqw; line-height: .98; letter-spacing: .02em; text-transform: uppercase;
+/* title fills the empty sky left of the glowing knob, centred in that space */
+.tlogo { position: absolute; left: 2.5%; top: 4%; width: 55%; height: 46%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; }
+.tlogo small { display: block; font-family: var(--display); font-weight: 700; color: #fff3c8; letter-spacing: .2em; font-size: 1.5cqw; text-transform: uppercase; text-shadow: 2px 2px 0 #000; white-space: nowrap; }
+.tlogo h1 { margin: .45em 0 0; font-family: var(--display); font-weight: 900; font-size: 5.95cqw; line-height: 1.22; letter-spacing: .02em; text-transform: uppercase; white-space: nowrap;
   background: linear-gradient(180deg, #fffbe0 0%, #f8d040 40%, #c88a28 70%, #7a4a10 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
-  filter: drop-shadow(3px 3px 0 #2c140a) drop-shadow(0 0 2px #000); text-wrap: balance; }
+  filter: drop-shadow(3px 3px 0 #2c140a) drop-shadow(0 0 2px #000); }
 .trow { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 .tfine { margin: 0; color: var(--ink-dim); max-width: 60ch; text-align: center; font-size: 19px; text-wrap: balance; }
 
@@ -3005,13 +3006,22 @@ PZ.circles = {
       }
       return best;
     };
+    // Jamie drinks a pint every time he wins, and gets sloppier with each one.
+    // He holds his drink for the first 7 games, then gets sloppier each game from game 8.
+    const flags = GK.game.s.flags;
+    const pints = () => Math.min(Math.max((flags.c4pints || 0) - 6, 0), 5);
+    const LEVEL = [ // [search depth, chance of a lazy move, chance he misses your threat]
+      [4, 0.25, 0], [3, 0.35, 0], [2, 0.45, 0.15], [2, 0.6, 0.3], [1, 0.7, 0.45], [1, 0.8, 0.6]];
+    const winsAt = p => order.find(k => { if (b[0][k]) return false; const r = drop(k, p); const w = winner(); b[r][k] = 0; return w && w.v === p; });
     const aiMove = () => {
+      const [depth, lazy, miss] = LEVEL[pints()];
+      const mine = winsAt(2); if (mine !== undefined) return mine;
+      const theirs = winsAt(1); if (theirs !== undefined && Math.random() >= miss) return theirs;
       const scored = [];
-      for (const k of order) { if (b[0][k]) continue; const r = drop(k, 2); scored.push([search(5, -Infinity, Infinity, 1), k]); b[r][k] = 0; }
+      for (const k of order) { if (b[0][k]) continue; const r = drop(k, 2); scored.push([search(depth, -Infinity, Infinity, 1), k]); b[r][k] = 0; }
       scored.sort((x, y) => y[0] - x[0]);
-      // Jamie is good, not perfect: now and then he misses a quiet move. He never misses a win or a block.
       let pick = scored[0][1];
-      if (scored.length > 1 && Math.abs(scored[0][0]) < 40000 && scored[1][0] > scored[0][0] - 25 && Math.random() < 0.22) pick = scored[1][1];
+      if (scored.length > 1 && Math.random() < lazy) pick = scored[1 + Math.floor(Math.random() * Math.min(3, scored.length - 1))][1];
       return pick;
     };
     const finish = () => {
@@ -3019,7 +3029,13 @@ PZ.circles = {
       if (w) {
         over = true; draw(w.L);
         if (w.v === 1) { status.textContent = 'FOUR IN A ROW! You beat Jamie the Bastard!'; GK.ui.sfx('fanfare'); again.hidden = true; quit.hidden = true; setTimeout(() => { close(); win(); }, 1800); }
-        else { status.textContent = GK.pick(['Jamie wins. "Again? Your round. Kidding. Again."', 'Jamie wins. He doesn\'t even look up.', 'Jamie wins. "Eleven years, shortarse."', 'Jamie wins and burps triumphantly.']); GK.ui.sfx('nope'); again.hidden = false; }
+        else {
+          flags.c4pints = (flags.c4pints || 0) + 1;
+          const n = flags.c4pints;
+          status.textContent = GK.pick(['Jamie wins. "Again? Your round."', 'Jamie wins. He doesn\'t even look up.', 'Jamie wins. "Eleven years, shortarse."', 'Jamie wins and burps triumphantly.'])
+            + ' ' + (n === 1 ? "He orders another pint. It doesn't touch the sides." : n < 7 ? `That's ${n} pints. Still sharp as a tack, the bastard.` : n < 9 ? `That's ${n} pints. Finally, his eyes are going a bit funny.` : `That's ${n} pints. He's swaying on the bench.`);
+          GK.ui.sfx('nope'); again.hidden = false;
+        }
         return true;
       }
       if (full()) { over = true; status.textContent = 'A draw. Jamie grunts. "Doesn\'t count."'; again.hidden = false; return true; }
@@ -3033,7 +3049,7 @@ PZ.circles = {
       setTimeout(() => { drop(aiMove(), 2); GK.ui.sfx('clack'); draw(); busy = false; if (!finish()) status.textContent = 'Your move. Click a column.'; }, 450);
     };
     grid.addEventListener('click', e => { const d = e.target.closest('.c4cell'); if (d) play(+d.dataset.c); });
-    const start = () => { b = Array.from({ length: R }, () => Array(C).fill(0)); over = false; busy = false; again.hidden = true; status.textContent = 'Your move. Click a column to drop a disc.'; draw(); };
+    const start = () => { b = Array.from({ length: R }, () => Array(C).fill(0)); over = false; busy = false; again.hidden = true; status.textContent = (flags.c4pints ? `Jamie has had ${flags.c4pints} pint${flags.c4pints > 1 ? 's' : ''}. ` : '') + 'Your move. Click a column to drop a disc.'; draw(); };
     again.onclick = start; quit.onclick = close;
     start();
     return { autoWin() { close(); win(); } };
