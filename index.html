@@ -83,7 +83,7 @@ form.cmd input::placeholder { color: #5d564c; }
 @keyframes blink { 50% { opacity: .55; } }
 
 /* right column */
-.side { display: flex; flex-direction: column; align-items: center; gap: 12px; min-height: 0; overflow: hidden; }
+.side { display: flex; flex-direction: column; align-items: center; gap: 12px; min-height: 0; overflow: visible; position: relative; z-index: 5; }
 .pad { display: grid; grid-template-columns: repeat(2, var(--ui)); gap: 8px 10px; }
 .ibtn { width: var(--ui); height: var(--ui); border-radius: 50%; border: 0; padding: 0; cursor: pointer; position: relative; display: grid; place-items: center; color: var(--steel);
   background: radial-gradient(circle at 35% 30%, var(--btn-hi), var(--btn) 55%, #19181a 100%);
@@ -96,6 +96,8 @@ form.cmd input::placeholder { color: #5d564c; }
 .ibtn[disabled] { opacity: .35; cursor: default; }
 .ibtn .tip { position: absolute; right: calc(100% + 8px); top: 50%; transform: translateY(-50%); background: #000; color: var(--gold); border: 1px solid var(--copper-lo); padding: 0 6px; font-size: 18px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .12s; z-index: 3; }
 .ibtn:hover .tip, .ibtn:focus-visible .tip { opacity: 1; }
+/* right-hand column: show the label left of the whole pad, not on top of the neighbouring button */
+.pad .ibtn:nth-child(even) .tip { right: calc(100% + 18px + var(--ui)); }
 .badge { position: absolute; right: -3px; top: -3px; min-width: 18px; height: 18px; border-radius: 9px; background: var(--gold); color: #2a1a06; font-size: 16px; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px #0e0d0f; }
 #soundbtn .x { display: none; }
 #soundbtn[data-mode="0"] .w1, #soundbtn[data-mode="0"] .w2 { display: none; }
@@ -176,11 +178,12 @@ i.coin.g { background: #f8d040; } i.coin.s { background: #c8d0d8; }
 /* title */
 .title { position: fixed; inset: 0; z-index: 30; background: var(--desk); background-image: radial-gradient(ellipse at 50% 35%, #2c2420 0%, var(--desk) 70%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 16px max(16px, env(safe-area-inset-left, 0px)); overflow: auto; }
 .tframe { width: min(100%, calc((100vh - 200px) * 16 / 9)); }
-.tframe .inner { position: relative; }
+.tframe .inner { position: relative; container-type: inline-size; }
 #titlepic { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; image-rendering: pixelated; }
-.tlogo { position: absolute; left: 0; right: 0; top: 5%; text-align: center; pointer-events: none; }
-.tlogo small { display: block; font-family: var(--display); font-weight: 700; color: #fff3c8; letter-spacing: .3em; font-size: clamp(8px, min(1.3vw, 1.9vh), 15px); text-transform: uppercase; text-shadow: 2px 2px 0 #000; }
-.tlogo h1 { margin: .15em 0 0; font-family: var(--display); font-weight: 900; font-size: clamp(18px, min(6vw, 8.5vh), 76px); line-height: .95; letter-spacing: .03em; text-transform: uppercase;
+/* title sits in the empty sky on the left, clear of the glowing knob */
+.tlogo { position: absolute; left: 5%; top: 8%; width: 52%; text-align: left; pointer-events: none; }
+.tlogo small { display: block; font-family: var(--display); font-weight: 700; color: #fff3c8; letter-spacing: .22em; font-size: 1.35cqw; text-transform: uppercase; text-shadow: 2px 2px 0 #000; }
+.tlogo h1 { margin: .2em 0 0; font-family: var(--display); font-weight: 900; font-size: 5.6cqw; line-height: .98; letter-spacing: .02em; text-transform: uppercase;
   background: linear-gradient(180deg, #fffbe0 0%, #f8d040 40%, #c88a28 70%, #7a4a10 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
   filter: drop-shadow(3px 3px 0 #2c140a) drop-shadow(0 0 2px #000); text-wrap: balance; }
 .trow { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
