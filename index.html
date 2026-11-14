@@ -53,6 +53,9 @@ canvas#scene { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; 
 
 .textp { margin: -6px 14px 0; border-radius: 0 0 14px 14px; padding-top: 4px; flex: 1; min-height: 150px; display: flex; }
 .textp .inner { border-radius: 0 0 8px 8px; padding: 8px 14px 6px; display: flex; flex-direction: column; gap: 5px; flex: 1; min-height: 0; }
+.logwrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.logwrap .log { padding-bottom: 1.6em; }
+.moretext { position: absolute; right: 4px; bottom: 2px; background: var(--gold); color: #2a1a06; border: 0; padding: 2px 10px; font: inherit; font-size: 19px; cursor: pointer; animation: blink 1.1s steps(2) infinite; box-shadow: 0 0 0 3px var(--well); }
 .log { flex: 1; min-height: 0; overflow-y: auto; letter-spacing: .05em; font-size: 23px; scrollbar-color: var(--copper-lo) transparent; }
 .log p { margin: 0 0 .4em; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 72ch; }
 .log q { quotes: none; color: #fff3c8; }
@@ -223,7 +226,7 @@ body.cutting canvas#scene { cursor: pointer; }
     </div>
     <div class="copper textp">
       <div class="inner">
-        <div class="log" id="log" aria-live="polite"></div>
+        <div class="logwrap"><div class="log" id="log" aria-live="polite"></div><button type="button" class="moretext" id="moretext" hidden>▼ more · press ENTER</button></div>
         <div class="invbar"><span class="invlbl">BAG</span><div class="inv" id="inv"></div></div>
         <form class="cmd" id="cmdform" autocomplete="off">
           <label for="cmd">&gt;</label>
@@ -3192,13 +3195,26 @@ const queue = []; let typing = null;
 const fmt = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"([^"]+)"/g, '<q>"$1"</q>');
 function say(text, cls) {
   if (text == null || text === '') return;
-  if (cls === 'you') { const p = document.createElement('p'); p.className = 'you'; p.textContent = '> ' + text; log.appendChild(p); scroll(); return; }
-  queue.push({ text: String(text), cls }); if (!typing) next();
+  if (cls === 'you') { const p = document.createElement('p'); p.className = 'you'; p.textContent = '> ' + text; log.appendChild(p); pinTo(p); scroll(); return; }
+  queue.push({ text: String(text), cls, pin: pinNext }); pinNext = false; if (!typing) next();
 }
-function scroll() { log.scrollTop = log.scrollHeight; }
+/* New text never scrolls its own start off the top. Each reply is pinned at its first line;
+   if it's too long for the box, a MORE button appears and ENTER (or a click) shows the rest. */
+let pin = Infinity, pinNext = false;
+const moreBtn = $('moretext');
+const maxScroll = () => Math.max(0, log.scrollHeight - log.clientHeight);
+function pinTo(p) { pin = Math.max(0, p.offsetTop - log.offsetTop - 4); }
+function scroll() { log.scrollTop = Math.min(maxScroll(), pin); updateMore(); }
+// the log has ~1.6em of empty padding at the bottom (so MORE never covers words): ignore that much
+function updateMore() { moreBtn.hidden = !(maxScroll() > log.scrollTop + parseFloat(getComputedStyle(log).paddingBottom || '0') + 4); }
+function moreLeft() { return !moreBtn.hidden; }
+function page() { pin = log.scrollTop + Math.max(60, log.clientHeight - 48); scroll(); }
+log.addEventListener('scroll', () => { if (log.scrollTop > pin) pin = log.scrollTop; updateMore(); });
+moreBtn.addEventListener('click', () => { page(); input.focus(); });
 function next() {
   const job = queue.shift(); if (!job) { typing = null; if (cut) cutReady(); return; }
   const p = document.createElement('p'); if (job.cls) p.className = job.cls; log.appendChild(p);
+  if (job.pin) pinTo(p);
   const fast = GK.test || matchMedia('(prefers-reduced-motion: reduce)').matches || job.cls === 'room';
   let i = 0, timer;
   typing = { finish() { clearInterval(timer); p.innerHTML = fmt(job.text); scroll(); next(); } };
@@ -3206,14 +3222,15 @@ function next() {
   timer = setInterval(() => { i += 3; p.textContent = job.text.slice(0, i); scroll(); if (i >= job.text.length) typing.finish(); }, 14);
 }
 function flush() { while (typing) typing.finish(); }
-log.addEventListener('click', () => { if (typing) typing.finish(); });
+log.addEventListener('click', () => { if (typing) typing.finish(); else if (moreLeft() && !cut) page(); });
 
 /* ---------------- the picture ---------------- */
 function draw(scene, special) {
   curScene = scene; curSpecial = special || null;
   GK.art.render(cv, scene, g, special);
 }
-function sceneOfRoom() { const r = g.room; return r.scene || g.s.room; }
+// the epilogue moves you "home", which has no room of its own: show the finale picture there
+function sceneOfRoom() { const r = g.room; if (!r) return 'finale'; return r.scene || g.s.room; }
 function redraw() { if (!cut) draw(sceneOfRoom()); updateCompass(); }
 
 /* ---------------- hotspots ---------------- */
@@ -3294,6 +3311,7 @@ function command(text) {
 $('cmdform').addEventListener('submit', e => {
   e.preventDefault();
   if (cut) { advance(); return; }
+  if (!input.value.trim() && moreLeft()) { page(); return; }
   const v = input.value; input.value = '';
   if (v.trim()) command(v);
 });
@@ -3313,6 +3331,7 @@ function cutReady() { if (!cut) return; cut.ready = true; $('more').hidden = fal
 function advance(first) {
   if (!cut) return;
   if (typing) { flush(); return; }
+  if (!first && moreLeft()) { page(); return; }
   if (!first && !cut.ready) return;
   cut.i++; cut.ready = false; $('more').hidden = true;
   const s = cut.steps[cut.i];
@@ -3324,6 +3343,7 @@ function advance(first) {
   }
   if (s.scene || s.special) draw(s.scene || curScene, s.special);
   input.placeholder = 'press ENTER (or click) to continue';
+  pinNext = true;
   say(s.text, s.cls || 'cut');
 }
 document.addEventListener('keydown', e => {
@@ -3344,7 +3364,7 @@ function death(cb) {
   flush();
   const d = $('dead'); d.hidden = false;
   input.disabled = true;
-  const go = () => { d.hidden = true; input.disabled = false; input.focus(); document.removeEventListener('keydown', key); cb(); };
+  const go = () => { d.hidden = true; input.disabled = false; input.focus(); document.removeEventListener('keydown', key); pinNext = true; cb(); };
   const key = e => { if (e.key === 'Enter') { e.preventDefault(); go(); } };
   $('deadbtn').onclick = go;
   setTimeout(() => { document.addEventListener('keydown', key); $('deadbtn').focus(); }, 400);
@@ -3353,7 +3373,7 @@ let pz = null;
 function puzzle(name, onWin) {
   const box = $('pz'); box.innerHTML = ''; box.hidden = false;
   const inner = document.createElement('div'); inner.className = 'pz-inner'; box.appendChild(inner);
-  const close = () => { box.hidden = true; box.innerHTML = ''; pz = null; input.focus(); };
+  const close = () => { box.hidden = true; box.innerHTML = ''; pz = null; pinNext = true; input.focus(); };
   pz = GK.puzzles[name].build(inner, onWin, close);
   if (GK.test) pz.autoWin();
 }
@@ -3412,22 +3432,68 @@ function sfx(k) {
   }[k] || (() => {}))();
 }
 GK.sfx = sfx;
-// a little looping tune in D dorian, very quiet
-let musicTimer = null;
+/* Music: a different little tune for each chapter (and the ending). Each tune plays twice,
+   then there's a quiet break (about 12 seconds) before it comes round again, so it never drones on. */
+const NOTE = n => { const m = /^([A-G])(#?)(\d)$/.exec(n); if (!m) return 0; const k = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1]] + (m[2] ? 1 : 0) + (+m[3] + 1) * 12; return 440 * Math.pow(2, (k - 69) / 12); };
+const TUNES = {
+  // I: a sunny Roman morning (the old Golden Knob tune, in D dorian)
+  1: { ms: 260, wave: 'square', bwave: 'triangle', vol: .012, rest: 46, bassEvery: 2,
+    mel: 'D5 E5 F5 E5 D5 C5 D5 - F5 G5 A5 G5 F5 E5 D5 -',
+    bass: 'D3 D3 F3 G3 C3 C3 G3 F3' },
+  // II: the open road and the Elven Ridge, a jaunty march
+  2: { ms: 220, wave: 'square', bwave: 'triangle', vol: .011, rest: 54, bassEvery: 2,
+    mel: 'G4 - G4 B4 D5 - B4 - C5 - A4 - G4 - - - G4 - B4 D5 G5 - D5 - E5 D5 C5 A4 G4 - - -',
+    bass: 'G2 D3 G2 D3 C3 D3 G2 G2 G2 D3 G2 D3 C3 D3 G2 G2' },
+  // III: the forest, where the KAT sleeps
+  3: { ms: 300, wave: 'triangle', bwave: 'sine', vol: .03, rest: 40, bassEvery: 4,
+    mel: 'E4 - G4 - B4 - - - C5 - B4 - G4 - - - A4 - - G4 E4 - - - D4 - E4 - - - - -',
+    bass: 'E2 C3 A2 B2 E2 C3 D3 B2' },
+  // IV: Christoph's posh villa, a dainty minuet
+  4: { ms: 240, wave: 'square', bwave: 'triangle', vol: .01, rest: 50, bassEvery: 3,
+    mel: 'C5 - E5 G5 - E5 F5 - D5 E5 - C5 D5 - B4 C5 - - G5 - E5 F5 - D5 E5 - C5 D5 - B4 C5 - -',
+    bass: 'C3 G2 C3 G2 F2 G2 C3 G2 C3 G2 F2 G2' },
+  // V: across the sea, rolling and salty
+  5: { ms: 230, wave: 'square', bwave: 'triangle', vol: .011, rest: 52, bassEvery: 3,
+    mel: 'A4 - - C5 - E5 A5 - - G5 - E5 F5 - D5 E5 - - A4 - - C5 - E5 D5 - B4 C5 - B4 A4 - -',
+    bass: 'A2 E3 A2 C3 D3 E3 A2 E3 F2 G2 E2 A2' },
+  // VI: the cold mountain pass, sparse and windy
+  6: { ms: 320, wave: 'triangle', bwave: 'sine', vol: .03, rest: 38, bassEvery: 4,
+    mel: 'B4 - - - F#5 - - - E5 - D5 - B4 - - - A4 - - - D5 - - - C#5 - - - B4 - - -',
+    bass: 'B1 F#2 G2 F#2 B1 F#2 G2 A2' },
+  // VII: the Ogre's lair, heavy and menacing
+  7: { ms: 230, wave: 'sawtooth', bwave: 'square', vol: .007, rest: 52, bassEvery: 2,
+    mel: 'D4 D4 - D4 F4 - D4 - G#4 - G4 - F4 - D4 - D4 D4 - D4 F4 - A4 - G#4 - G4 - F4 - E4 -',
+    bass: 'D2 D2 D2 D2 G#1 G#1 A1 A1 D2 D2 D2 D2 G#1 G#1 A1 A1' },
+  // the ending: knob in the cart, everyone happy
+  end: { ms: 170, wave: 'square', bwave: 'triangle', vol: .013, rest: 12, bassEvery: 2,
+    mel: 'C5 E5 G5 C6 - G5 E5 G5 C6 - D6 E6 - D6 C6 - A5 - C6 - G5 - E5 - F5 - D5 - C5 - - -',
+    bass: 'C3 G3 C3 G3 F3 C3 G3 G3 C3 G3 C3 G3 F3 G3 C3 C3' }
+};
+Object.values(TUNES).forEach(t => { t.m = t.mel.split(' ').map(NOTE); t.b = t.bass.split(' ').map(NOTE); });
+const tuneKey = () => g.s.over ? 'end' : (g.s.started ? g.s.chapter : 1);
+let musicTimer = null, musicOn = false;
 function music(on) {
-  clearInterval(musicTimer); musicTimer = null;
+  clearTimeout(musicTimer); musicTimer = null; musicOn = !!on;
   if (!on || GK.test) return;
-  const a = actx(); if (!a) return;
-  const bass = [146.8, 146.8, 174.6, 196, 130.8, 130.8, 196, 174.6];
-  const mel = [587, 659, 698, 659, 587, 523, 587, 0, 698, 784, 880, 784, 698, 659, 587, 0];
-  let step = 0;
-  musicTimer = setInterval(() => {
-    if (soundMode < 2 || document.hidden) return;
-    if (step % 2 === 0) tone(bass[(step / 2 | 0) % 8], 'triangle', .45, .045);
-    const m = mel[step % 16]; if (m) tone(m, 'square', .18, .012);
+  if (!actx()) return;
+  let key = null, step = 0;
+  const tick = () => {
+    if (!musicOn) return;
+    const k = tuneKey(); if (k !== key) { key = k; step = 0; }
+    const t = TUNES[key] || TUNES[1];
+    if (soundMode === 2 && !document.hidden) {
+      const loop = t.m.length * 2, phase = step % (loop + t.rest);
+      if (phase < loop) {
+        const f = t.m[phase % t.m.length]; if (f) tone(f, t.wave, t.ms / 1000 * .75, t.vol);
+        if (phase % t.bassEvery === 0) { const b = t.b[(phase / t.bassEvery | 0) % t.b.length]; if (b) tone(b, t.bwave, t.ms / 1000 * t.bassEvery * .8, .045); }
+      }
+    }
     step++;
-  }, 260);
+    musicTimer = setTimeout(tick, t.ms);
+  };
+  tick();
 }
+GK.ui.tuneKey = tuneKey; GK.ui.TUNES = TUNES;
 function setSound(m) {
   soundMode = m; try { localStorage.setItem('goldenknob-sound', m); } catch (e) {}
   const b = $('soundbtn'); b.dataset.mode = m; b.querySelector('.tip').textContent = ['Sound off', 'Sound effects', 'Sound + music'][m];
@@ -3461,7 +3527,7 @@ function slotMenu(mode) {
     const b = document.createElement('button'); b.className = 'pz-btn slot';
     b.innerHTML = `<b>Slot ${n}</b><span>${s ? `Chapter ${['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII'][s.chapter]} · ${GK.rooms[s.room] ? GK.rooms[s.room].name : ''} · ${new Date(s.savedAt || Date.now()).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}` : 'Empty'}</span>`;
     b.disabled = mode === 'load' && !s;
-    b.onclick = () => { m.hidden = true; if (mode === 'save') GK.save.slot(n); else { log.innerHTML = ''; GK.save.load(n); redraw(); inv(); } input.focus(); };
+    b.onclick = () => { m.hidden = true; if (mode === 'save') GK.save.slot(n); else { log.innerHTML = ''; pin = Infinity; GK.save.load(n); redraw(); inv(); } input.focus(); };
     list.appendChild(b);
   });
 }
@@ -3477,7 +3543,7 @@ function title() {
 }
 function newGame() {
   g.s = GK.newState(); g.s.started = true;
-  log.innerHTML = ''; selectItem(null); inv();
+  log.innerHTML = ''; pin = Infinity; selectItem(null); inv();
   $('title').hidden = true;
   input.focus();
   g.chapter(1, 'A Rude Awakening', null);
@@ -3490,7 +3556,7 @@ function newGame() {
   ], () => { g.go('bedroom'); inv(); });
 }
 $('newgame').onclick = () => { actx(); setSound(soundMode); newGame(); };
-$('continue').onclick = () => { actx(); setSound(soundMode); $('title').hidden = true; log.innerHTML = ''; GK.save.load('auto'); inv(); redraw(); input.focus(); };
+$('continue').onclick = () => { actx(); setSound(soundMode); $('title').hidden = true; log.innerHTML = ''; pin = Infinity; GK.save.load('auto'); inv(); redraw(); input.focus(); };
 
 /* ---------------- hook into the engine ---------------- */
 Object.assign(GK.ui, {
